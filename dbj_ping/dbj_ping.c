@@ -143,19 +143,20 @@ static bool flush_dns_cache(void);
 void dbj_log(log_kind_t kind, const char msg[MAX_LOG_MSG], ...) {
     int result = 0;
     __try {
-        if (!g_config.enable_logging) __leave;
-        
+        // Always log during initialization, check config only if initialized
+        // if (g_initialized && !g_config.enable_logging) __leave;
+
         char formatted_msg[MAX_LOG_MSG];
         va_list args;
         va_start(args, msg);
         vsnprintf_s(formatted_msg, sizeof(formatted_msg), _TRUNCATE, msg, args);
         va_end(args);
-        
-        HANDLE event_source = RegisterEventSourceA(NULL, "dbj_ping");
-        if (event_source == NULL) __leave;
-        
-        WORD event_type;
-        switch (kind) {
+
+        // Use Application log with generic source (more reliable)
+        HANDLE event_source = RegisterEventSourceA(NULL, "Application");
+        if (event_source != NULL) {
+            WORD event_type;
+            switch (kind) {
             case LOG_ERROR:
             case LOG_CRITICAL:
                 event_type = EVENTLOG_ERROR_TYPE;
@@ -166,22 +167,23 @@ void dbj_log(log_kind_t kind, const char msg[MAX_LOG_MSG], ...) {
             default:
                 event_type = EVENTLOG_INFORMATION_TYPE;
                 break;
+            }
+
+            LPCSTR messages[] = { formatted_msg };
+            ReportEventA(event_source, event_type, 0, 1000 + kind, NULL, 1, 0, messages, NULL);
+            DeregisterEventSource(event_source);
         }
-        
-        LPCSTR messages[] = { formatted_msg };
-        ReportEventA(event_source, event_type, 0, 1000 + kind, NULL, 1, 0, messages, NULL);
-        DeregisterEventSource(event_source);
-        
+
         // Also output to debug console in debug builds
-        #ifdef _DEBUG
-        OutputDebugStringA(formatted_msg);
-        OutputDebugStringA("\n");
-        #endif
-        
+#ifdef _DEBUG
+        const char* level_str[] = { "INFO", "WARN", "ERROR", "CRITICAL" };
+        printf("[dbj_ping %s] %s\n", level_str[kind], formatted_msg);
+#endif
+
         result = 1;
     }
     __finally {
-        // Cleanup handled above
+        // Nothing to cleanup here
     }
 }
 
@@ -197,7 +199,7 @@ static bool load_configuration(void) {
             dbj_log(LOG_INFO, "Configuration file not found, creating default");
             if (!create_default_config()) __leave;
             result = 1;
-            __leave;
+           // why leaving here? bug --> __leave;
         }
         
         // Read configuration values
