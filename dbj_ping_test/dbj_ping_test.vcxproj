@@ -190,7 +190,7 @@ echo Test build completed!</Command>
     </Link>
     <PostBuildEvent>
       <Command>echo Copying DLL to test directory...
-copy "$(SolutionDir)bin\$(Platform)\$(Configuration)\dbj_ping.dll" "$(OutDir)" /Y
+echo copy "$(SolutionDir)bin\$(Platform)\$(Configuration)\dbj_ping.dll" "$(OutDir)" /Y
 echo Test build completed!</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
@@ -230,7 +230,7 @@ echo Test build completed!</Command>
     </Link>
     <PostBuildEvent>
       <Command>echo Copying DLL to test directory...
-copy "$(SolutionDir)bin\$(Platform)\$(Configuration)\dbj_ping.dll" "$(OutDir)" /Y
+echo copy "$(SolutionDir)bin\$(Platform)\$(Configuration)\dbj_ping.dll" "$(OutDir)" /Y
 echo Test build completed!</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
