@@ -1,21 +1,4 @@
 /*
- * dbj_ping.def - Export definitions file
- * Place this file in the dbj_ping project directory
- */
-
-/*
-EXPORTS
-ping_initialize
-ping_execute
-ping_get_stats
-ping_get_config
-ping_set_config
-ping_reset_stats
-ping_force_countermeasures
-ping_cleanup
-*/
-
-/*
  * dbj_ping.h - Header file for dbj_ping DLL
  * Place this file in the dbj_ping project directory
  */
@@ -23,6 +6,7 @@ ping_cleanup
 #ifndef DBJ_PING_H
 #define DBJ_PING_H
 
+#define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <stdbool.h>
 
@@ -129,33 +113,3 @@ void dbj_log(log_kind_t kind, const char msg[MAX_LOG_MSG], ...);
 
 #endif // DBJ_PING_H
 
-/*
- * Directory Structure:
- * 
- * dbj_ping\               (Solution directory)
- * ├── dbj_ping.sln        (Solution file)
- * ├── dbj_ping\           (DLL project directory)
- * │   ├── dbj_ping.vcxproj
- * │   ├── dbj_ping.c      (Main implementation)
- * │   ├── dbj_ping.h      (Header file - this file)
- * │   ├── dbj_ping.def    (Export definitions - above)
- * │   └── README.md
- * ├── dbj_ping_test\      (Test project directory)
- * │   ├── dbj_ping_test.vcxproj
- * │   ├── dbj_ping_test.c (Test application)
- * │   ├── minidump_writer.c
- * │   ├── minidump_writer.h
- * │   └── README_TEST.md
- * ├── bin\                (Output directory)
- * │   ├── x64\
- * │   │   ├── Debug\
- * │   │   └── Release\
- * │   └── Win32\
- * │       ├── Debug\
- * │       └── Release\
- * ├── obj\                (Intermediate files)
- * └── deployment\         (Deployment package)
- *     ├── dbj_ping.dll
- *     ├── dbj_ping.lib
- *     └── dbj_ping.h
- */
