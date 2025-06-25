@@ -1,8 +1,8 @@
-/*
- * README_TEST.md - Documentation for the test project
- * Place this file in the dbj_ping_test project directory
- */
 
+> here is the power shell script to view the event log, emited from dbj_ping.dll 
+```powershell
+ Get-EventLog -LogName Application | Where-Object {$_.Message -like "*dbj_ping*"} | Select-Object TimeGenerated, EntryType, @{Name="FullMessage"; Expression={$_.ReplacementStrings -join " "}} | Format-Table -Wrap
+ ```
 
 # dbj_ping Test Application
 

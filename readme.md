@@ -1,3 +1,8 @@
+> here is the power shell script to view the event log, emited from dbj_ping.dll 
+```powershell
+ Get-EventLog -LogName Application | Where-Object {$_.Message -like "*dbj_ping*"} | Select-Object TimeGenerated, EntryType, @{Name="FullMessage"; Expression={$_.ReplacementStrings -join " "}} | Format-Table -Wrap
+ ```
+
 # dbj_ping - Advanced Windows Ping DLL with Countermeasures
 
 A high-performance Windows DLL that provides ping functionality with intelligent countermeasures for network issues. Built with C17, MSVC, and comprehensive SEH (Structured Exception Handling).

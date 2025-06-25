@@ -25,8 +25,6 @@
 #pragma comment(lib, "ws2_32.lib")
 #pragma comment(lib, "iphlpapi.lib")
 
-// Configuration file name
-#define CONFIG_FILE "dbj_ping.ini"
 #define MAX_TARGET_LEN 256
 #define MAX_LOG_MSG 0xFF
 #define PING_DATA_SIZE 32
@@ -170,7 +168,9 @@ void dbj_log(log_kind_t kind, const char msg[MAX_LOG_MSG], ...) {
             }
 
             LPCSTR messages[] = { formatted_msg };
-            ReportEventA(event_source, event_type, 0, 1000 + kind, NULL, 1, 0, messages, NULL);
+            // Using Event ID 0 will show the raw message without needing a message template.
+            // this was wrong: ReportEventA(event_source, event_type, 0, 1000 + kind, NULL, 1, 0, messages, NULL);
+            ReportEventA(event_source, event_type, 0, 0, NULL, 1, 0, messages, NULL);
             DeregisterEventSource(event_source);
         }
 
@@ -191,46 +191,87 @@ void dbj_log(log_kind_t kind, const char msg[MAX_LOG_MSG], ...) {
 
 #pragma region Configuration_Management
 
+// Global variable for config path
+static char g_config_path[MAX_PATH] = { 0 };
+
+static bool initialize_config_path(void) {
+    int result = 0;
+    __try {
+        HMODULE hModule = GetModuleHandleA("dbj_ping.dll");
+        if (!hModule) {
+            hModule = GetModuleHandleA(NULL); // Fall back to EXE
+        }
+
+        if (GetModuleFileNameA(hModule, g_config_path, sizeof(g_config_path))) {
+            // Remove filename, keep directory
+            char* last_slash = strrchr(g_config_path, '\\');
+            if (last_slash) {
+                *(last_slash + 1) = '\0';
+            }
+            strcat_s(g_config_path, sizeof(g_config_path), "dbj_ping.ini");
+
+            dbj_log(LOG_INFO, "Config file path: %s", g_config_path);
+            result = 1;
+        }
+        else {
+            dbj_log(LOG_ERROR, "Failed to get module path for config file");
+        }
+    }
+    __finally {
+        // Nothing to cleanup here
+    }
+
+    return result != 0;
+}
+
 // Load configuration from INI file
 static bool load_configuration(void) {
     int result = 0;
     __try {
-        if (GetFileAttributesA(CONFIG_FILE) == INVALID_FILE_ATTRIBUTES) {
-            dbj_log(LOG_INFO, "Configuration file not found, creating default");
-            if (!create_default_config()) __leave;
-            result = 1;
-           // why leaving here? bug --> __leave;
+        // Initialize config path first
+        if (!initialize_config_path()) {
+            dbj_log(LOG_ERROR, "Failed to initialize configuration path");
+            __leave;
         }
-        
+
+        if (GetFileAttributesA(g_config_path) == INVALID_FILE_ATTRIBUTES) {
+            dbj_log(LOG_INFO, "Configuration file not found, creating default");
+            if (!create_default_config()) {
+                dbj_log(LOG_ERROR, "Failed to create default configuration file");
+                __leave;
+            }
+            // Continue to read the newly created configuration file
+        }
+
         // Read configuration values
-        g_config.timeout_ms = GetPrivateProfileIntA("Ping", "TimeoutMs", DEFAULT_CONFIG.timeout_ms, CONFIG_FILE);
-        g_config.interval_ms = GetPrivateProfileIntA("Ping", "IntervalMs", DEFAULT_CONFIG.interval_ms, CONFIG_FILE);
-        g_config.loss_threshold = GetPrivateProfileIntA("Thresholds", "LossThreshold", DEFAULT_CONFIG.loss_threshold, CONFIG_FILE);
-        g_config.latency_threshold = GetPrivateProfileIntA("Thresholds", "LatencyThreshold", DEFAULT_CONFIG.latency_threshold, CONFIG_FILE);
-        g_config.jitter_threshold = GetPrivateProfileIntA("Thresholds", "JitterThreshold", DEFAULT_CONFIG.jitter_threshold, CONFIG_FILE);
-        g_config.max_retries = GetPrivateProfileIntA("Ping", "MaxRetries", DEFAULT_CONFIG.max_retries, CONFIG_FILE);
-        
-        g_config.enable_countermeasures = GetPrivateProfileIntA("Features", "EnableCountermeasures", DEFAULT_CONFIG.enable_countermeasures, CONFIG_FILE);
-        g_config.enable_dns_switching = GetPrivateProfileIntA("Features", "EnableDnsSwitching", DEFAULT_CONFIG.enable_dns_switching, CONFIG_FILE);
-        g_config.enable_route_refresh = GetPrivateProfileIntA("Features", "EnableRouteRefresh", DEFAULT_CONFIG.enable_route_refresh, CONFIG_FILE);
-        g_config.enable_logging = GetPrivateProfileIntA("Features", "EnableLogging", DEFAULT_CONFIG.enable_logging, CONFIG_FILE);
-        
-        GetPrivateProfileStringA("Ping", "Target", DEFAULT_CONFIG.target, g_config.target, sizeof(g_config.target), CONFIG_FILE);
-        
+        g_config.timeout_ms = GetPrivateProfileIntA("Ping", "TimeoutMs", DEFAULT_CONFIG.timeout_ms, g_config_path);
+        g_config.interval_ms = GetPrivateProfileIntA("Ping", "IntervalMs", DEFAULT_CONFIG.interval_ms, g_config_path);
+        g_config.loss_threshold = GetPrivateProfileIntA("Thresholds", "LossThreshold", DEFAULT_CONFIG.loss_threshold, g_config_path);
+        g_config.latency_threshold = GetPrivateProfileIntA("Thresholds", "LatencyThreshold", DEFAULT_CONFIG.latency_threshold, g_config_path);
+        g_config.jitter_threshold = GetPrivateProfileIntA("Thresholds", "JitterThreshold", DEFAULT_CONFIG.jitter_threshold, g_config_path);
+        g_config.max_retries = GetPrivateProfileIntA("Ping", "MaxRetries", DEFAULT_CONFIG.max_retries, g_config_path);
+
+        g_config.enable_countermeasures = GetPrivateProfileIntA("Features", "EnableCountermeasures", DEFAULT_CONFIG.enable_countermeasures, g_config_path);
+        g_config.enable_dns_switching = GetPrivateProfileIntA("Features", "EnableDnsSwitching", DEFAULT_CONFIG.enable_dns_switching, g_config_path);
+        g_config.enable_route_refresh = GetPrivateProfileIntA("Features", "EnableRouteRefresh", DEFAULT_CONFIG.enable_route_refresh, g_config_path);
+        g_config.enable_logging = GetPrivateProfileIntA("Features", "EnableLogging", DEFAULT_CONFIG.enable_logging, g_config_path);
+
+        GetPrivateProfileStringA("Ping", "Target", DEFAULT_CONFIG.target, g_config.target, sizeof(g_config.target), g_config_path);
+
         // Load backup DNS servers
         g_config.backup_dns_count = 0;
         for (int i = 0; i < MAX_BACKUP_DNS; i++) {
             char key_name[32];
             snprintf(key_name, sizeof(key_name), "BackupDns%d", i + 1);
-            char dns_server[16] = {0};
-            GetPrivateProfileStringA("DNS", key_name, "", dns_server, sizeof(dns_server), CONFIG_FILE);
-            
+            char dns_server[16] = { 0 };
+            GetPrivateProfileStringA("DNS", key_name, "", dns_server, sizeof(dns_server), g_config_path);
+
             if (strlen(dns_server) > 0) {
                 strncpy_s(g_config.backup_dns[g_config.backup_dns_count], sizeof(g_config.backup_dns[0]), dns_server, _TRUNCATE);
                 g_config.backup_dns_count++;
             }
         }
-        
+
         if (g_config.backup_dns_count == 0) {
             // Use defaults if none loaded
             for (int i = 0; i < DEFAULT_CONFIG.backup_dns_count; i++) {
@@ -238,129 +279,179 @@ static bool load_configuration(void) {
             }
             g_config.backup_dns_count = DEFAULT_CONFIG.backup_dns_count;
         }
-        
-        dbj_log(LOG_INFO, "Configuration loaded successfully");
+
+        dbj_log(LOG_INFO, "Configuration loaded successfully from: %s", g_config_path);
         result = 1;
     }
     __finally {
         // Nothing to cleanup here
     }
-    
+
     return result != 0;
 }
+#ifdef _DEBUG
+#define WRITE_INI_OR_FAIL(section, key, value) \
+    do { \
+        if (!WritePrivateProfileStringA(section, key, value, g_config_path)) { \
+            char current_dir[MAX_PATH]; \
+            GetCurrentDirectoryA(sizeof(current_dir), current_dir); \
+            DWORD file_attrs = GetFileAttributesA(g_config_path); \
+            dbj_log(LOG_ERROR, "ERROR : " __FILE__ " : %d", __LINE__ ); \
+            dbj_log(LOG_ERROR, "Failed to write INI [%s]%s=%s to %s", \
+                   section, key, value, g_config_path); \
+            dbj_log(LOG_ERROR, "Current directory: %s, File attributes: 0x%08X", \
+                   current_dir, file_attrs); \
+result = false ; \
+            __leave; \
+        } \
+    } while(0)
+#else // RELEASE
+// Error handling macro for WritePrivateProfileStringA
+#define WRITE_INI_OR_FAIL(section, key, value) \
+    do { \
+        if (!WritePrivateProfileStringA(section, key, value, file)) { \
+            dbj_log(LOG_ERROR, "Failed to write INI [%s]%s=%s to %s (WritePrivateProfileStringA returned FALSE)", \
+                   section, key, value, g_config_path); \
+result = false ; \
+            __leave; \
+        } \
+    } while(0)
+#endif
+
 
 // Create default configuration file
 static bool create_default_config(void) {
-    int result = 0;
+    int result = true;
     __try {
         g_config = DEFAULT_CONFIG;
-        
-        // Write default configuration to INI file
-        WritePrivateProfileStringA("Ping", "Target", g_config.target, CONFIG_FILE);
-        
+
+        // Write default configuration to INI file with error checking
+        WRITE_INI_OR_FAIL("Ping", "Target", g_config.target);
+
         char temp_str[32];
         sprintf_s(temp_str, sizeof(temp_str), "%lu", g_config.timeout_ms);
-        WritePrivateProfileStringA("Ping", "TimeoutMs", temp_str, CONFIG_FILE);
-        
+        WRITE_INI_OR_FAIL("Ping", "TimeoutMs", temp_str);
+
         sprintf_s(temp_str, sizeof(temp_str), "%lu", g_config.interval_ms);
-        WritePrivateProfileStringA("Ping", "IntervalMs", temp_str, CONFIG_FILE);
-        
+        WRITE_INI_OR_FAIL("Ping", "IntervalMs", temp_str);
+
         sprintf_s(temp_str, sizeof(temp_str), "%lu", g_config.max_retries);
-        WritePrivateProfileStringA("Ping", "MaxRetries", temp_str, CONFIG_FILE);
-        
+        WRITE_INI_OR_FAIL("Ping", "MaxRetries", temp_str);
+
         sprintf_s(temp_str, sizeof(temp_str), "%lu", g_config.loss_threshold);
-        WritePrivateProfileStringA("Thresholds", "LossThreshold", temp_str, CONFIG_FILE);
-        
+        WRITE_INI_OR_FAIL("Thresholds", "LossThreshold", temp_str);
+
         sprintf_s(temp_str, sizeof(temp_str), "%lu", g_config.latency_threshold);
-        WritePrivateProfileStringA("Thresholds", "LatencyThreshold", temp_str, CONFIG_FILE);
-        
+        WRITE_INI_OR_FAIL("Thresholds", "LatencyThreshold", temp_str);
+
         sprintf_s(temp_str, sizeof(temp_str), "%lu", g_config.jitter_threshold);
-        WritePrivateProfileStringA("Thresholds", "JitterThreshold", temp_str, CONFIG_FILE);
-        
+        WRITE_INI_OR_FAIL("Thresholds", "JitterThreshold", temp_str);
+
         sprintf_s(temp_str, sizeof(temp_str), "%d", g_config.enable_countermeasures);
-        WritePrivateProfileStringA("Features", "EnableCountermeasures", temp_str, CONFIG_FILE);
-        
+        WRITE_INI_OR_FAIL("Features", "EnableCountermeasures", temp_str);
+
         sprintf_s(temp_str, sizeof(temp_str), "%d", g_config.enable_dns_switching);
-        WritePrivateProfileStringA("Features", "EnableDnsSwitching", temp_str, CONFIG_FILE);
-        
+        WRITE_INI_OR_FAIL("Features", "EnableDnsSwitching", temp_str);
+
         sprintf_s(temp_str, sizeof(temp_str), "%d", g_config.enable_route_refresh);
-        WritePrivateProfileStringA("Features", "EnableRouteRefresh", temp_str, CONFIG_FILE);
-        
+        WRITE_INI_OR_FAIL("Features", "EnableRouteRefresh", temp_str);
+
         sprintf_s(temp_str, sizeof(temp_str), "%d", g_config.enable_logging);
-        WritePrivateProfileStringA("Features", "EnableLogging", temp_str, CONFIG_FILE);
-        
+        WRITE_INI_OR_FAIL("Features", "EnableLogging", temp_str);
+
         // Write backup DNS servers
         for (DWORD i = 0; i < g_config.backup_dns_count; i++) {
             char key_name[32];
             sprintf_s(key_name, sizeof(key_name), "BackupDns%lu", i + 1);
-            WritePrivateProfileStringA("DNS", key_name, g_config.backup_dns[i], CONFIG_FILE);
+            WRITE_INI_OR_FAIL("DNS", key_name, g_config.backup_dns[i]);
         }
-        
-        // Write comments to the INI file
-        WritePrivateProfileStringA(NULL, "; dbj_ping Configuration", NULL, CONFIG_FILE);
-        WritePrivateProfileStringA(NULL, "; TimeoutMs: Ping timeout in milliseconds", NULL, CONFIG_FILE);
-        WritePrivateProfileStringA(NULL, "; IntervalMs: Interval between pings in milliseconds", NULL, CONFIG_FILE);
-        WritePrivateProfileStringA(NULL, "; LossThreshold: Packet loss percentage to trigger countermeasures", NULL, CONFIG_FILE);
-        WritePrivateProfileStringA(NULL, "; LatencyThreshold: RTT in ms to trigger latency countermeasures", NULL, CONFIG_FILE);
-        WritePrivateProfileStringA(NULL, "; JitterThreshold: Jitter in ms to trigger stability countermeasures", NULL, CONFIG_FILE);
-        
-        dbj_log(LOG_INFO, "Default configuration file created: %s", CONFIG_FILE);
-        result = 1;
+
+        // Write comments to the INI file (these can fail silently)
+        WritePrivateProfileStringA(NULL, "; dbj_ping Configuration", NULL, g_config_path);
+        WritePrivateProfileStringA(NULL, "; TimeoutMs: Ping timeout in milliseconds", NULL, g_config_path);
+        WritePrivateProfileStringA(NULL, "; IntervalMs: Interval between pings in milliseconds", NULL, g_config_path);
+        WritePrivateProfileStringA(NULL, "; LossThreshold: Packet loss percentage to trigger countermeasures", NULL, g_config_path);
+        WritePrivateProfileStringA(NULL, "; LatencyThreshold: RTT in ms to trigger latency countermeasures", NULL, g_config_path);
+        WritePrivateProfileStringA(NULL, "; JitterThreshold: Jitter in ms to trigger stability countermeasures", NULL, g_config_path);
+
+        dbj_log(LOG_INFO, "Default configuration file created: %s", g_config_path);
+        result = true;
     }
     __finally {
         // Nothing to cleanup here
     }
-    
-    return result != 0;
-}
 
+    return result ;
+}
+// Save current configuration to INI file
 // Save current configuration to INI file
 static bool save_configuration(void) {
     int result = 0;
     __try {
+        // Make sure we have a valid config path
+        if (strlen(g_config_path) == 0) {
+            if (!initialize_config_path()) {
+                dbj_log(LOG_ERROR, "Failed to initialize configuration path for saving");
+                __leave;
+            }
+        }
+
         char temp_str[32];
-        
-        WritePrivateProfileStringA("Ping", "Target", g_config.target, CONFIG_FILE);
-        
+
+        WRITE_INI_OR_FAIL("Ping", "Target", g_config.target);
+
         sprintf_s(temp_str, sizeof(temp_str), "%lu", g_config.timeout_ms);
-        WritePrivateProfileStringA("Ping", "TimeoutMs", temp_str, CONFIG_FILE);
-        
+        WRITE_INI_OR_FAIL("Ping", "TimeoutMs", temp_str);
+
         sprintf_s(temp_str, sizeof(temp_str), "%lu", g_config.interval_ms);
-        WritePrivateProfileStringA("Ping", "IntervalMs", temp_str, CONFIG_FILE);
-        
+        WRITE_INI_OR_FAIL("Ping", "IntervalMs", temp_str);
+
         sprintf_s(temp_str, sizeof(temp_str), "%lu", g_config.max_retries);
-        WritePrivateProfileStringA("Ping", "MaxRetries", temp_str, CONFIG_FILE);
-        
+        WRITE_INI_OR_FAIL("Ping", "MaxRetries", temp_str);
+
         sprintf_s(temp_str, sizeof(temp_str), "%lu", g_config.loss_threshold);
-        WritePrivateProfileStringA("Thresholds", "LossThreshold", temp_str, CONFIG_FILE);
-        
+        WRITE_INI_OR_FAIL("Thresholds", "LossThreshold", temp_str);
+
         sprintf_s(temp_str, sizeof(temp_str), "%lu", g_config.latency_threshold);
-        WritePrivateProfileStringA("Thresholds", "LatencyThreshold", temp_str, CONFIG_FILE);
-        
+        WRITE_INI_OR_FAIL("Thresholds", "LatencyThreshold", temp_str);
+
         sprintf_s(temp_str, sizeof(temp_str), "%lu", g_config.jitter_threshold);
-        WritePrivateProfileStringA("Thresholds", "JitterThreshold", temp_str, CONFIG_FILE);
-        
+        WRITE_INI_OR_FAIL("Thresholds", "JitterThreshold", temp_str);
+
         sprintf_s(temp_str, sizeof(temp_str), "%d", g_config.enable_countermeasures);
-        WritePrivateProfileStringA("Features", "EnableCountermeasures", temp_str, CONFIG_FILE);
-        
+        WRITE_INI_OR_FAIL("Features", "EnableCountermeasures", temp_str);
+
         sprintf_s(temp_str, sizeof(temp_str), "%d", g_config.enable_dns_switching);
-        WritePrivateProfileStringA("Features", "EnableDnsSwitching", temp_str, CONFIG_FILE);
-        
+        WRITE_INI_OR_FAIL("Features", "EnableDnsSwitching", temp_str);
+
         sprintf_s(temp_str, sizeof(temp_str), "%d", g_config.enable_route_refresh);
-        WritePrivateProfileStringA("Features", "EnableRouteRefresh", temp_str, CONFIG_FILE);
-        
+        WRITE_INI_OR_FAIL("Features", "EnableRouteRefresh", temp_str);
+
         sprintf_s(temp_str, sizeof(temp_str), "%d", g_config.enable_logging);
-        WritePrivateProfileStringA("Features", "EnableLogging", temp_str, CONFIG_FILE);
-        
+        WRITE_INI_OR_FAIL("Features", "EnableLogging", temp_str);
+
+        // Save backup DNS servers (clear existing ones first)
+        for (int i = 1; i <= MAX_BACKUP_DNS; i++) {
+            char key_name[32];
+            sprintf_s(key_name, sizeof(key_name), "BackupDns%d", i);
+            if (i <= (int)g_config.backup_dns_count) {
+                WRITE_INI_OR_FAIL("DNS", key_name, g_config.backup_dns[i - 1]);
+            }
+            else {
+                // Clear unused DNS entries
+                WritePrivateProfileStringA("DNS", key_name, NULL, g_config_path);
+            }
+        }
+
+        dbj_log(LOG_INFO, "Configuration saved successfully to: %s", g_config_path);
         result = 1;
     }
     __finally {
         // Nothing to cleanup here
     }
-    
+
     return result != 0;
 }
-
 #pragma endregion
 
 #pragma region Utility_Functions
