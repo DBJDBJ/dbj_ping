@@ -1,3 +1,6 @@
+>
+> This is win32 program
+>
 > here is the power shell script to view the event log, emited from dbj_ping.dll 
 ```powershell
  Get-EventLog -LogName Application | Where-Object {$_.Message -like "*dbj_ping*"} | Select-Object TimeGenerated, EntryType, @{Name="FullMessage"; Expression={$_.ReplacementStrings -join " "}} | Format-Table -Wrap
@@ -406,7 +409,7 @@ deployment\
 4. **Error Handling**: Always handle errors gracefully
 5. **Resource Cleanup**: Use RAII patterns in `__finally` blocks
 
-### Code Style
+### Coding Style (if any)
 
 - **Function Names**: Use `snake_case` for internal functions
 - **API Functions**: Use `ping_` prefix for exported functions
@@ -434,4 +437,4 @@ This project is provided as-is for educational and development purposes.
 
 ---
 
-**Built with ❤️ using C17, MSVC, and Windows APIs**
+**Built using C17, MSVC, and Windows APIs, with Claude as demanding but trusty young apprentice**
