@@ -275,7 +275,6 @@ echo Build completed successfully!</Command>
   <!-- Other Files -->
   <ItemGroup>
     <None Include="dbj_ping.def" />
-    <Text Include="README.md" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
