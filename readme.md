@@ -6,9 +6,9 @@
  Get-EventLog -LogName Application | Where-Object {$_.Message -like "*dbj_ping*"} | Select-Object TimeGenerated, EntryType, @{Name="FullMessage"; Expression={$_.ReplacementStrings -join " "}} | Format-Table -Wrap
  ```
 
-# dbj_ping - Advanced Windows Ping DLL with Countermeasures
+# dbj_ping - Windows Ping DLL with Countermeasures
 
-A high-performance Windows DLL that provides ping functionality with intelligent countermeasures for network issues. Built with C17, MSVC, and comprehensive SEH (Structured Exception Handling).
+A high-performance Windows DLL that provides ping functionality with intelligent countermeasures for network issues. Built with C17, MSVC, and WIN32 SEH (Structured Exception Handling).
 
 ## 🎯 Key Features
 
